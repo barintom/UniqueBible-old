@@ -1403,15 +1403,6 @@ class TextCommandParser:
         else:
             formattedBiblesFolder = os.path.join(config.marvelData, "bibles")
             formattedBibles = [f[:-6] for f in os.listdir(formattedBiblesFolder) if os.path.isfile(os.path.join(formattedBiblesFolder, f)) and f.endswith(".bible") and not re.search(r"^[\._]", f)]
-            if text in ("MOB", "MIB", "MTB", "MPB", "MAB", "LXX1i", "LXX2i", "LXX1", "LXX2") and not config.readFormattedBibles:
-                config.readFormattedBibles = True
-                if self.parent is not None:
-                    self.parent.enableParagraphButtonAction(False)
-            elif config.readFormattedBibles and (((text in ("OHGBi", "OHGB") or not text in formattedBibles) and view == "main") or text == "LXX"):
-                config.readFormattedBibles = False
-                if self.parent is not None:
-                    self.parent.enableParagraphButtonAction(False)
-
             # Custom font styling for Bible
             (fontFile, fontSize, css) = Bible(text).getFontInfo()
             if view == "main":

@@ -1238,6 +1238,11 @@ class Bible:
 #        self.cursor.execute("COMMIT")
 
     def readTextChapter(self, b, c):
+        # Prefer Bible table (preserves notes, vocalized text)
+        verses = self.readAllVersesFromBibleTable(b, c)
+        if verses:
+            return verses
+        # Fallback: Verses table
         query = "SELECT Book, Chapter, Verse, Scripture FROM Verses WHERE Book=? AND Chapter=? ORDER BY Verse"
         self.cursor.execute(query, (b, c))
         textChapter = self.cursor.fetchall()
@@ -1269,7 +1274,59 @@ class Bible:
         else:
             return ""
 
+    def readAllVersesFromBibleTable(self, b, c, includePreamble=False):
+        """Extract all verses from Bible table chapter HTML. Returns list of (b, c, v, text) tuples.
+        When includePreamble=True, subheadings/preamble before each verse are included in the text.
+        When includePreamble=False (default), only the verse text itself is returned (subheadings
+        are handled separately by readPlainChapter via AGBTS data)."""
+        if not self.checkTableExists("Bible"):
+            return None
+        query = "SELECT Scripture FROM Bible WHERE Book=? AND Chapter=?"
+        self.cursor.execute(query, (b, c))
+        result = self.cursor.fetchone()
+        if not result:
+            return None
+        html = result[0]
+        pattern = r'<vid id="v\d+\.\d+\.(\d+)"[^>]*>\d+</vid>'
+        parts = re.split(pattern, html)
+        verses = []
+        for i in range(1, len(parts) - 1, 2):
+            v = int(parts[i])
+            verseText = parts[i + 1].strip()
+            verseText = re.sub(r'</verse>.*$', '', verseText, flags=re.DOTALL).strip()
+            verseText = re.sub(r'</div>\s*$', '', verseText)
+            if includePreamble:
+                if i == 1:
+                    preamble = re.sub(r'^<verse>\s*', '', parts[0]).strip()
+                else:
+                    m = re.search(r'</verse>\s*<verse>(.*)', parts[i - 1], re.DOTALL)
+                    preamble = m.group(1).strip() if m else ''
+                if preamble:
+                    verseText = preamble + ' ' + verseText if verseText else preamble
+            verses.append((b, c, v, verseText))
+        return verses if verses else None
+
+    def readTextVerseFromBibleTable(self, b, c, v):
+        """Extract a single verse's text from the Bible table's formatted chapter HTML.
+        Used for bibles where the Verses table has stripped text (no notes, subheadings,
+        or vowels), but the Bible table has the full rich HTML."""
+        verses = self.readAllVersesFromBibleTable(b, c, includePreamble=True)
+        if not verses:
+            return None
+        for vb, vc, vv, verseText in verses:
+            if vv == v:
+                return verseText
+        return None
+
     def readTextVerse(self, b, c, v, noAudioTag=False):
+        # Prefer reading from Bible table (preserves notes, vocalized text, subheadings)
+        formattedText = self.readTextVerseFromBibleTable(b, c, v)
+        if formattedText is not None:
+            if config.runMode == "api-server" or noAudioTag:
+                return (b, c, v, formattedText)
+            else:
+                return (b, c, v, f"{FileUtil.getVerseAudioTag(self.text, b, c, v)}{formattedText}")
+        # Fallback: read from Verses table
         if self.checkTableExists("Verses"):
             query = "SELECT Book, Chapter, Verse, Scripture FROM Verses WHERE Book=? AND Chapter=? AND Verse=?"
             self.cursor.execute(query, (b, c, v))
@@ -1323,6 +1380,17 @@ class Bible:
             mp3Text = FileUtil.getMP3TextFile(self.text)
             # e.g. <vid id="v1.1.1" onclick="luV(1)">1</vid>
             chapter += re.sub(r'<vid id="v([0-9]+?).([0-9]+?).([0-9]+?)" onclick="luV\([0-9]+?\)"(.*?>.*?</vid>[ ]*)', partial(self.formatVerseNumber, mp3Text), scripture[0])
+            # Inject AGBTS subheadings if not already present in the HTML
+            if config.addTitleToPlainChapter:
+                agbtsData = AGBTSData()
+                chapterSubheadings = agbtsData.getchapterSubheadings(b, c)
+                if chapterSubheadings:
+                    hasBuiltInSubheadings = '<u><b>' in chapter
+                    if not hasBuiltInSubheadings:
+                        for sb, sc, sv, subText in chapterSubheadings:
+                            vidPattern = f'<vid id="v{b}.{c}.{sv}"'
+                            subHeading = f'<br><u><b>{subText}</b></u><br>'
+                            chapter = chapter.replace(vidPattern, subHeading + vidPattern)
             divTag = "<div>"
             if self.text in config.rtlTexts and b < 40:
                 divTag = "<div style='direction: rtl;'>"
