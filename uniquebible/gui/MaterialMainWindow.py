@@ -1262,6 +1262,8 @@ class MaterialMainWindow:
         self.addMaterialIconButton("menu3_main", icon, self.mainHistoryButtonClicked, self.leftToolBar)
         icon = "material/image/navigate_next/materialiconsoutlined/48dp/2x/outline_navigate_next_black_48dp.png"
         self.addMaterialIconButton("menu3_mainForward", icon, self.forward, self.leftToolBar)
+        icon = "material/action/bookmark/materialiconsoutlined/48dp/2x/outline_bookmark_black_48dp.png"
+        self.addMaterialIconButton("menu_bookmarks", icon, self.showBookmarksDialog, self.leftToolBar)
         self.leftToolBar.addSeparator()
 #        if ("Htmldocx" in config.enabled):
 #            icon = "material/action/description/materialiconsoutlined/48dp/2x/outline_description_black_48dp.png"

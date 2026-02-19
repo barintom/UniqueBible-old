@@ -72,6 +72,7 @@ from uniquebible.gui.MiniBrowser import MiniBrowser
 from uniquebible.gui.CentralWidget import CentralWidget
 from uniquebible.gui.AppUpdateDialog import AppUpdateDialog
 from uniquebible.gui.MaterialColorDialog import MaterialColorDialog
+from uniquebible.gui.BookmarksDialog import BookmarksDialog
 from uniquebible.db.ToolsSqlite import LexiconData
 from uniquebible.util.TtsLanguages import TtsLanguages
 from uniquebible.util.DatafileLocation import DatafileLocation
@@ -3289,6 +3290,10 @@ config.mainWindow.audioPlayer.setAudioOutput(config.audioOutput)"""
     def showBibleCollectionDialog(self):
         self.bibleCollectionDialog = BibleCollectionDialog(self)
         self.bibleCollectionDialog.show()
+
+    def showBookmarksDialog(self):
+        self.bookmarksDialog = BookmarksDialog(self)
+        self.bookmarksDialog.show()
 
     def showLiveFilterDialog(self):
         self.liveFilterDialog = LiveFilterDialog(self)
