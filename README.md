@@ -1,3 +1,45 @@
+# Clone, Install (Linux), and Push Changes
+
+The commands below assume Ubuntu/Debian-like Linux and Python 3. Adjust as needed for your distro.
+
+## Clone and install locally
+
+```bash
+git clone git@github.com:barintom/UniqueBible.git
+cd UniqueBible
+
+python3 -m venv .venv
+source .venv/bin/activate
+
+python -m pip install -U pip
+python -m pip install -e .
+```
+
+## Update your local install after pulling changes
+
+```bash
+git pull
+python -m pip install -e .
+```
+
+## Commit and push your changes
+
+```bash
+git checkout -b my-branch
+
+# edit files...
+git status
+git add -A
+git commit -m "Describe your change"
+git push -u origin my-branch
+```
+
+Optional (with GitHub CLI):
+
+```bash
+gh pr create
+```
+
 # Full Upgrade from UniqueBible App to BibleMate AI
 
 [BibleMate AI](https://github.com/eliranwong/biblemate) is partially built on the [UniqueBible App](https://github.com/eliranwong/UniqueBible) data and features.
@@ -117,6 +159,12 @@ To run GUI mode:
 
 > uniquebible
 
+To run GUI mode from a source checkout (this repo) using the local virtualenv:
+
+> .venv/bin/python uniquebible/uba.py gui
+
+Note: if you previously installed UniqueBible via `pip install uniquebible`, the `uniquebible` command may point to that older/global install. Using the explicit `.venv/bin/python ...` command above avoids PATH/version conflicts. If needed, uninstall the global install with `python -m pip uninstall uniquebible` (or `pipx uninstall uniquebible` if you installed it with pipx).
+
 More about installation at https://github.com/eliranwong/UniqueBible/wiki/Installation
 
 More about running modes at https://github.com/eliranwong/UniqueBible/wiki/UBA-Run-Modes
@@ -137,4 +185,3 @@ More about running modes at https://github.com/eliranwong/UniqueBible/wiki/UBA-R
 
 Please consider a donation via our PayPal account:
 <a href="https://www.paypal.me/MarvelBible">https://www.paypal.me/MarvelBible</a>
-

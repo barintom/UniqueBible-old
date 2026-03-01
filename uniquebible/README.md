@@ -1,3 +1,78 @@
+# Clone, Install (Linux), and Push Changes
+
+The commands below assume Ubuntu/Debian-like Linux and Python 3. Adjust as needed for your distro.
+
+## Clone and install locally
+
+```bash
+git clone git@github.com:barintom/UniqueBible.git
+cd UniqueBible
+
+python3 -m venv .venv
+source .venv/bin/activate
+
+python -m pip install -U pip
+python -m pip install -e .
+```
+
+## Update your local install after pulling changes
+
+```bash
+git pull
+python -m pip install -e .
+```
+
+## Commit and push your changes
+
+```bash
+git checkout -b my-branch
+
+# edit files...
+git status
+git add -A
+git commit -m "Describe your change"
+git push -u origin my-branch
+```
+
+Optional (with GitHub CLI):
+
+```bash
+gh pr create
+```
+
+# Full Upgrade from UniqueBible App to BibleMate AI
+
+[BibleMate AI](https://github.com/eliranwong/biblemate) is partially built on the [UniqueBible App](https://github.com/eliranwong/UniqueBible) data and features.
+
+There are lots of new features implemented in BibleMate AI that haven't been included in the UniqueBible App.
+
+Additional Features implemented in BibleMate AI include, but are not limited to:
+
+* AI Agent Mode for Bible Studies 
+* AI Partner Mode for Bible Studies
+* Newly Added MCP Server
+* API Server Re-written
+* CLI Version Re-written
+* Web GUI / Http Server Re-written
+* AI-generated Book Analysis on Every Single Bible Book in Three Languages
+* AI-generated Capter Summary on Every Single Bible Chapter in Three Languages
+* AI-generated Commentary on Every Single Bible Verse in Three Languages
+* New Set of 12 Search Tools for In-depth Bible Studies
+* Support Semantic Searches with Vectors Database
+* Support Selective Morphology Search with Web UI
+* Sync Parallel Bible Scrolling
+* Sync Bible Notes with Google Accounts
+* User Customisation for Web UI
+* Quick Access of Hebrew / Greek Audio for Every Single Hebrew / Greek Word via Tooltips
+* Bible Podcast Audio for Every Single Bible Book
+* Bible Podcast Audio for Every Single Bible Chapter
+* New Added Loop Feature for Bible Audio
+* Improved Visual Presentation of Bible Relationships, Maps, Timelines, and Chronology
+* Improved Tab and History Management
+* Data Downloads in One Go
+
+Read more at: https://github.com/eliranwong/biblemate
+
 # UniqueBible
 
 A cross-platform & offline bible application, integrated with high-quality resources and unique features.
@@ -104,4 +179,3 @@ More about running modes at https://github.com/eliranwong/UniqueBible/wiki/UBA-R
 
 Please consider a donation via our PayPal account:
 <a href="https://www.paypal.me/MarvelBible">https://www.paypal.me/MarvelBible</a>
-
