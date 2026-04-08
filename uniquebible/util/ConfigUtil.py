@@ -802,7 +802,16 @@ class ConfigUtil:
                 pass
         if "Chineseenglishlookup" in config.enabled:
             try:
+                import builtins
+                original_open = builtins.open
+                def patched_open(*args, **kwargs):
+                    if len(args) > 0 and isinstance(args[0], str) and 'cedict_1_0_ts_utf-8_mdbg.txt' in args[0]:
+                        kwargs['encoding'] = 'utf-8'
+                    return original_open(*args, **kwargs)
+
                 from chinese_english_lookup import Dictionary
+                import chinese_english_lookup.dictionary
+                chinese_english_lookup.dictionary.open = patched_open
                 config.cedict = Dictionary()
             except:
                 pass

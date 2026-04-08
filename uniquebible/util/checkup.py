@@ -385,7 +385,7 @@ def isGroqInstalled():
 
 def isMistralInstalled():
     try:
-        from mistralai import Mistral
+        from mistralai.client import Mistral
         return True
     except:
         return False
@@ -484,6 +484,17 @@ def isPyluachInstalled():
 def isChineseEnglishLookupInstalled():
     try:
         from chinese_english_lookup import Dictionary
+        import chinese_english_lookup.dictionary
+        import builtins
+
+        # Fix for Windows: chinese-english-lookup 0.0.3 fails on Windows because it opens its utf-8 dictionary file without specifying encoding.
+        original_open = builtins.open
+        def patched_open(*args, **kwargs):
+            if len(args) > 0 and isinstance(args[0], str) and 'cedict_1_0_ts_utf-8_mdbg.txt' in args[0]:
+                kwargs['encoding'] = 'utf-8'
+            return original_open(*args, **kwargs)
+
+        chinese_english_lookup.dictionary.open = patched_open
         config.cedict = Dictionary()
         return True
     except:
