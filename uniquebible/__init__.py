@@ -1,6 +1,6 @@
 import os, requests, re, socket
 import importlib.metadata
-from shutil import copy, copytree
+from shutil import copy, copytree, copy2
 from pathlib import Path
 from packaging import version
 from uniquebible import config
@@ -22,7 +22,9 @@ if os.path.isfile(backupFile) and not hasattr(config, "mainText"):
         with open(backupFile, "r", encoding="utf-8") as fileObj:
             configs = fileObj.read()
         # load backup configs
-        configs = "from uniquebible import config\n" + re.sub("^([A-Za-z0-9])", r"config.\1", configs, flags=re.M)
+        configs = "from uniquebible import config\n" + re.sub(
+            "^([A-Za-z0-9])", r"config.\1", configs, flags=re.M
+        )
         exec(configs, globals())
         # copy backup configs
         copy(backupFile, configFile)
@@ -38,13 +40,62 @@ if os.path.isfile(backupFile) and not hasattr(config, "mainText"):
 # set up folders for storing user content in ~/UniqueBible
 if not os.path.isdir(ubahome):
     Path(ubahome).mkdir(parents=True, exist_ok=True)
-for i in ("audio", "htmlResources", "import", "macros", "marvelData", "music", "notes", "temp", "terminal_history", "terminal_mode", "thirdParty", "video", "webstorage", "workspace"):
+
+
+def _copy_missing_items(source_folder, target_folder):
+    """
+    Copy files from source_folder into target_folder without overwriting existing files.
+    This helps recover from partially-created user directories (e.g. interrupted first run).
+    """
+    for root, dirs, files in os.walk(source_folder):
+        rel = os.path.relpath(root, source_folder)
+        dest_root = target_folder if rel == "." else os.path.join(target_folder, rel)
+        Path(dest_root).mkdir(parents=True, exist_ok=True)
+        for d in dirs:
+            Path(os.path.join(dest_root, d)).mkdir(parents=True, exist_ok=True)
+        for f in files:
+            src_f = os.path.join(root, f)
+            dst_f = os.path.join(dest_root, f)
+            if not os.path.exists(dst_f):
+                try:
+                    copy2(src_f, dst_f)
+                except:
+                    pass
+
+
+for i in (
+    "audio",
+    "htmlResources",
+    "import",
+    "macros",
+    "marvelData",
+    "music",
+    "notes",
+    "temp",
+    "terminal_history",
+    "terminal_mode",
+    "thirdParty",
+    "video",
+    "webstorage",
+    "workspace",
+):
     sourceFolder = os.path.join(config.packageDir, i)
     targetFolder = os.path.join(ubahome, i)
     if not os.path.isdir(targetFolder):
         print(f"Setting up user directory '{i}' ...")
         copytree(sourceFolder, targetFolder, dirs_exist_ok=True)
-    #copytree(i, os.path.join(ubahome, i), dirs_exist_ok=True)
+    elif i == "marvelData":
+        # If a user directory exists but is missing core subfolders, recover by copying
+        # only missing items from the packaged resources (without overwriting user data).
+        required_subdir = os.path.join(targetFolder, "bibles")
+        if not os.path.isdir(required_subdir) and os.path.isdir(sourceFolder):
+            print("Recovering missing resources in user directory 'marvelData' ...")
+            _copy_missing_items(sourceFolder, targetFolder)
+    elif i == "thirdParty":
+        required_subdir = os.path.join(targetFolder, "dictionaries")
+        if not os.path.isdir(required_subdir) and os.path.isdir(sourceFolder):
+            print("Recovering missing resources in user directory 'thirdParty' ...")
+            _copy_missing_items(sourceFolder, targetFolder)
 
 # set up map images
 import uniquebible.htmlResources.images.exlbl
@@ -62,11 +113,25 @@ if os.getcwd() != ubahome:
 
 # user plugins; create folders for users to place their own plugins
 # TODO: user plugins not working for now; will implement later
-for i in ("chatGPT", "config", "context", "event", "language", "layout", "menu", "shutdown", "startup", "terminal", "text_editor"):
+for i in (
+    "chatGPT",
+    "config",
+    "context",
+    "event",
+    "language",
+    "layout",
+    "menu",
+    "shutdown",
+    "startup",
+    "terminal",
+    "text_editor",
+):
     Path(os.path.join(ubahome, "plugins", i)).mkdir(parents=True, exist_ok=True)
+
 
 def getSitePackagesLocation():
     return os.path.dirname(config.packageDir)
+
 
 def getPackageInstalledVersion(package):
     try:
@@ -75,13 +140,15 @@ def getPackageInstalledVersion(package):
     except:
         return None
 
+
 def getPackageLatestVersion(package):
     try:
         response = requests.get(f"https://pypi.org/pypi/{package}/json", timeout=10)
-        latest_version = response.json()['info']['version']
+        latest_version = response.json()["info"]["version"]
         return version.parse(latest_version)
     except:
         return None
+
 
 def isServerAlive(ip, port):
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -93,10 +160,9 @@ def isServerAlive(ip, port):
     except socket.error:
         return False
 
+
 if hasattr(config, "checkVersionOnStartup") and config.checkVersionOnStartup:
-
     if isServerAlive("8.8.8.8", 53):
-
         thisPackage = "uniquebible"
 
         content = []
@@ -110,7 +176,9 @@ if hasattr(config, "checkVersionOnStartup") and config.checkVersionOnStartup:
             if latest_version is not None:
                 content.append(f"Latest version: {latest_version}")
                 if latest_version > installed_version:
-                    content.append("Run `pip install --upgrade uniquebible` to upgrade!")
+                    content.append(
+                        "Run `pip install --upgrade uniquebible` to upgrade!"
+                    )
                     print("\n".join(content))
 
         config.internetConnectivity = True
@@ -135,11 +203,13 @@ config.llm_backends = ["openai", "github", "azure", "google", "grok", "groq", "m
 # check latest version of azure api at https://learn.microsoft.com/en-us/azure/ai-services/openai/reference
 config.azure_api_version = "2024-10-21"
 
+
 def is_CJK(text):
     for char in text:
-        if 'CJK' in unicodedata.name(char):
+        if "CJK" in unicodedata.name(char):
             return True
     return False
+
 
 def isLLMReady(backend=""):
     if not backend:
@@ -160,29 +230,33 @@ def isLLMReady(backend=""):
         return True
     return False
 
+
 def getGithubApi_key() -> str:
-    '''
+    """
     support multiple github api keys
     User can manually edit config to change the value of config.githubApi_key to a list of multiple api keys instead of a string of a single api key
-    '''
+    """
     if config.githubApi_key:
         if isinstance(config.githubApi_key, str):
             return config.githubApi_key
         elif isinstance(config.githubApi_key, list):
             if len(config.githubApi_key) > 1:
                 # rotate multiple api keys
-                config.githubApi_key = config.githubApi_key[1:] + [config.githubApi_key[0]]
+                config.githubApi_key = config.githubApi_key[1:] + [
+                    config.githubApi_key[0]
+                ]
             return config.githubApi_key[0]
         else:
             return ""
     else:
         return ""
 
+
 def getGroqApi_key() -> str:
-    '''
+    """
     support multiple grop api keys
     User can manually edit config to change the value of config.groqApi_key to a list of multiple api keys instead of a string of a single api key
-    '''
+    """
     if config.groqApi_key:
         if isinstance(config.groqApi_key, str):
             return config.groqApi_key
@@ -196,35 +270,47 @@ def getGroqApi_key() -> str:
     else:
         return ""
 
+
 def getMistralApi_key() -> str:
-    '''
+    """
     support multiple mistral api keys
     User can manually edit config to change the value of config.mistralApi_key to a list of multiple api keys instead of a string of a single api key
-    '''
+    """
     if config.mistralApi_key:
         if isinstance(config.mistralApi_key, str):
             return config.mistralApi_key
         elif isinstance(config.mistralApi_key, list):
             if len(config.mistralApi_key) > 1:
                 # rotate multiple api keys
-                config.mistralApi_key = config.mistralApi_key[1:] + [config.mistralApi_key[0]]
+                config.mistralApi_key = config.mistralApi_key[1:] + [
+                    config.mistralApi_key[0]
+                ]
             return config.mistralApi_key[0]
         else:
             return ""
     else:
         return ""
 
+
 def getOpenAIClient():
     # priority in order: azure > github > openai
     if config.azureApi_key:
-        return AzureOpenAI(azure_endpoint=re.sub("/models[/]*$", "", config.azureBaseUrl),api_version=config.azure_api_version,api_key=config.azureApi_key)
+        return AzureOpenAI(
+            azure_endpoint=re.sub("/models[/]*$", "", config.azureBaseUrl),
+            api_version=config.azure_api_version,
+            api_key=config.azureApi_key,
+        )
     if config.githubApi_key:
-        return OpenAI(api_key=getGithubApi_key(),base_url="https://models.inference.ai.azure.com")
+        return OpenAI(
+            api_key=getGithubApi_key(), base_url="https://models.inference.ai.azure.com"
+        )
     return OpenAI()
+
 
 def extract_text(filepath):
     try:
         from markitdown import MarkItDown
+
         filepath = filepath.rstrip()
         if os.path.isfile(filepath):
             if re.search("(\.jpg|\.jpeg|\.png)$", filepath.lower()):
@@ -235,13 +321,22 @@ def extract_text(filepath):
     except:
         return "Install markitdown first!"
 
+
 def getChatResponse(backend, chatMessages) -> Optional[str]:
     if not isLLMReady(backend) or not backend in config.llm_backends:
         return None
-    if config.rawOutput and hasattr(config, "webHomePage") and not config.webHomePage==f"{config.webPrivateHomePage}.html":
+    if (
+        config.rawOutput
+        and hasattr(config, "webHomePage")
+        and not config.webHomePage == f"{config.webPrivateHomePage}.html"
+    ):
         # AI features via web API are accessible to private data users only in http-server mode
         return None
-    if not backend == config.llm_backend and hasattr(config, "webHomePage") and not config.webHomePage==f"{config.webPrivateHomePage}.html":
+    if (
+        not backend == config.llm_backend
+        and hasattr(config, "webHomePage")
+        and not config.webHomePage == f"{config.webPrivateHomePage}.html"
+    ):
         # Inference with non-default AI backends is accessible to private data users only in http-server mode
         return None
     try:
@@ -280,7 +375,11 @@ def getChatResponse(backend, chatMessages) -> Optional[str]:
         elif backend == "azure":
             # azure_endpoint should be something like https://<your-resource-name>.openai.azure.com without "/models" at the end
             endpoint = re.sub("/models[/]*$", "", config.azureBaseUrl)
-            azureClient = AzureOpenAI(azure_endpoint=endpoint,api_version=config.azure_api_version,api_key=config.azureApi_key)
+            azureClient = AzureOpenAI(
+                azure_endpoint=endpoint,
+                api_version=config.azure_api_version,
+                api_key=config.azureApi_key,
+            )
             completion = azureClient.chat.completions.create(
                 model=config.openaiApi_chat_model,
                 messages=chatMessages,
@@ -306,7 +405,7 @@ def getChatResponse(backend, chatMessages) -> Optional[str]:
             # https://ai.google.dev/gemini-api/docs/openai
             googleaiClient = OpenAI(
                 api_key=config.googleaiApi_key,
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             )
             completion = googleaiClient.chat.completions.create(
                 model=config.googleaiApi_chat_model,
@@ -332,10 +431,11 @@ def getChatResponse(backend, chatMessages) -> Optional[str]:
     except:
         textOutput = "Failed to connect! Please try again later."
     if hasattr(config, "displayLanguage") and config.displayLanguage == "zh_HANT":
-        textOutput = OpenCC('s2t').convert(textOutput)
+        textOutput = OpenCC("s2t").convert(textOutput)
     elif hasattr(config, "displayLanguage") and config.displayLanguage == "zh_HANS":
-        textOutput = OpenCC('t2s').convert(textOutput)
+        textOutput = OpenCC("t2s").convert(textOutput)
     return textOutput
+
 
 def getAiFeatureDisclaimer() -> str:
     if config.displayLanguage == "zh_HANT":
@@ -346,10 +446,12 @@ def getAiFeatureDisclaimer() -> str:
         disclaimer = """<hr><p><b>Disclaimer:</b> The AI-powered Bible feature on this website is intended to provide helpful information and insights about the Bible. However, it is not a substitute for personal study and reflection on the scriptures. The Bible itself remains the ultimate source of truth and authority for Christians. Please use the information provided by this tool for reference only, and always consult the Bible for definitive answers to your questions.</p>"""
     return disclaimer
 
+
 def showErrors():
     trace = traceback.format_exc()
     print(trace if config.developer else "Error encountered!")
     return trace
+
 
 def chatContent():
     content = "<h1>AI {0}</h1>".format(config.thisTranslation["chat"])
@@ -363,43 +465,64 @@ def chatContent():
                 iContent = i.get("content", "")
                 if iContent:
                     # add bible reference links
-                    iContent = bibleVerseParser.parseText(iContent, splitInChunks=True, parseBooklessReferences=False, canonicalOnly=True)
+                    iContent = bibleVerseParser.parseText(
+                        iContent,
+                        splitInChunks=True,
+                        parseBooklessReferences=False,
+                        canonicalOnly=True,
+                    )
                     # convert markdown format to html
                     iContent = markdown.markdown(iContent)
                 if iRole == "user":
-                    color = "#f2f2f2" if config.theme == 'default' else "#5f5f5f"
-                    iContent = f'''<p><table style='width: 100%;'><tr style='background-color: {color};'>
+                    color = "#f2f2f2" if config.theme == "default" else "#5f5f5f"
+                    iContent = f"""<p><table style='width: 100%;'><tr style='background-color: {color};'>
                     <td style='vertical-align: text-top;'>{iContent}</td>
-                    </tr></table></p>'''
+                    </tr></table></p>"""
                 else:
-                    iContent = f'''<p><table style='width: 100%;'><tr>
+                    iContent = f"""<p><table style='width: 100%;'><tr>
                     <td style='vertical-align: text-top;'>{iContent}</td>
-                    </tr></table></p>'''
+                    </tr></table></p>"""
                 if index == (len(config.chatMessages) - 1):
                     # the last item
                     if config.noQt:
                         iRole = f"""<vid id="v{config.mainB}.{config.mainC}.{config.mainV}"></vid>"""
                     else:
                         iRole = f"""<vid id="v{config.studyB}.{config.studyC}.{config.studyV}"></vid>"""
-                messages.append(f'''{iContent}''')
+                messages.append(f"""{iContent}""")
         content += "\n\n".join(messages)
 
-        content += "<hr>"    
+        content += "<hr>"
     else:
         if config.displayLanguage == "zh_HANT":
-            content += """<p>請輸入您的提問，然後按下按鈕「{0}」。</p>""".format(config.thisTranslation["send"])
+            content += """<p>請輸入您的提問，然後按下按鈕「{0}」。</p>""".format(
+                config.thisTranslation["send"]
+            )
         elif config.displayLanguage == "zh_HANS":
-            content += """<p>请输入您的提问，然后按下按钮「{0}」。</p>""".format(config.thisTranslation["send"])
+            content += """<p>请输入您的提问，然后按下按钮「{0}」。</p>""".format(
+                config.thisTranslation["send"]
+            )
         else:
-            content += """<p>Please enter your query and click the button '{0}'.</p>""".format(config.thisTranslation["send"])
+            content += (
+                """<p>Please enter your query and click the button '{0}'.</p>""".format(
+                    config.thisTranslation["send"]
+                )
+            )
 
     content += "<p><input type='text' id='chatInput' style='width:95%' autofocus></p>"
-    newButton = "" if not config.chatMessages else """ <button id='openChatInputButton' type='button' onclick='document.title="CHAT:::NEW";' class='ubaButton'>{0}</button>""".format(config.thisTranslation["restart"])
-    content += """<p><button id='openChatInputButton' type='button' onclick='bibleChat();' class='ubaButton'>{0}</button>{1}</p>""".format(config.thisTranslation["send"], newButton)
+    newButton = (
+        ""
+        if not config.chatMessages
+        else """ <button id='openChatInputButton' type='button' onclick='document.title="CHAT:::NEW";' class='ubaButton'>{0}</button>""".format(
+            config.thisTranslation["restart"]
+        )
+    )
+    content += """<p><button id='openChatInputButton' type='button' onclick='bibleChat();' class='ubaButton'>{0}</button>{1}</p>""".format(
+        config.thisTranslation["send"], newButton
+    )
 
     content += getAiFeatureDisclaimer()
 
-    #content = markdown.markdown(content)
+    # content = markdown.markdown(content)
     content += """
 <script>
 function bibleChat() {0}

@@ -9,21 +9,25 @@ def cleanupTempFiles():
     for file in files:
         os.remove(file)
 
+
 # Run startup plugins
 def runStartupPlugins():
     if config.enablePlugins:
         for ff in (config.packageDir, config.ubaUserDir):
-            for plugin in FileUtil.fileNamesWithoutExtension(os.path.join(ff, "plugins", "startup"), "py"):
+            for plugin in FileUtil.fileNamesWithoutExtension(
+                os.path.join(ff, "plugins", "startup"), "py"
+            ):
                 if not plugin in config.excludeStartupPlugins:
-                    script = os.path.join(ff, "plugins", "startup", "{0}.py".format(plugin))
+                    script = os.path.join(
+                        ff, "plugins", "startup", "{0}.py".format(plugin)
+                    )
                     config.mainWindow.execPythonFile(script)
+
 
 def printContentOnConsole(text):
     if not "html-text" in sys.modules:
         import html_text
     print(html_text.extract_text(text))
-    #subprocess.Popen(["echo", html_text.extract_text(text)])
-    #sys.stdout.flush()
     return text
 
 
@@ -31,10 +35,17 @@ def printContentOnConsole(text):
 cleanupTempFiles()
 
 # Setup logging
-logger = logging.getLogger('uba')
-if config.enableLogging:
+logger = logging.getLogger("uba")
+# Allow enabling logging without editing config.py (useful for debugging crashes).
+enable_logging = (
+    bool(getattr(config, "enableLogging", False))
+    or os.environ.get("UBA_ENABLE_LOGGING") == "1"
+)
+if enable_logging:
     logger.setLevel(logging.DEBUG)
-    logHandler = handlers.TimedRotatingFileHandler('uba.log', when='D', interval=1, backupCount=0)
+    logHandler = handlers.TimedRotatingFileHandler(
+        "uba.log", when="D", interval=1, backupCount=0
+    )
     logHandler.setLevel(logging.DEBUG)
     logger.addHandler(logHandler)
     logging.getLogger("requests").setLevel(logging.WARNING)
@@ -42,8 +53,11 @@ if config.enableLogging:
 else:
     logger.addHandler(logging.NullHandler())
 
+
 def global_excepthook(type, value, tb):
     logger.error("Uncaught exception", exc_info=(type, value, tb))
-    print(traceback.format_exc())
+    # Use the exception passed to the hook; traceback.format_exc() can be empty here.
+    print("".join(traceback.format_exception(type, value, tb)))
+
 
 sys.excepthook = global_excepthook
