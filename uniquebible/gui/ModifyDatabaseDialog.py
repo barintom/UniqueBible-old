@@ -98,7 +98,11 @@ class ModifyDatabaseDialog(QDialog):
         self.languageList = QComboBox()
         row.addWidget(self.languageList)
         self.languageList.addItems(self.languageCodes)
-        self.languageList.setCurrentIndex(self.languageCodes.index(self.bible.getLanguage()))
+        try:
+            index = self.languageCodes.index(self.bible.getLanguage())
+        except ValueError:
+            index = 0
+        self.languageList.setCurrentIndex(index)
         self.layout.addLayout(row)
 
         buttons = QDialogButtonBox.Ok | QDialogButtonBox.Cancel
