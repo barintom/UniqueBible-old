@@ -73,11 +73,13 @@ if enable_logging:
     logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 # Make freezes debuggable even when verbose logging is off:
-# `kill -USR1 <pid>` dumps stack traces of all threads into the log file.
+# `kill -USR1 <pid>` dumps stack traces of all threads into the fault log file.
 try:
-    _fh = open(os.path.abspath(log_file), "a", buffering=1, encoding="utf-8")
+    fault_file = log_file + ".fault"
+    _fh = open(os.path.abspath(fault_file), "a", buffering=1, encoding="utf-8")
     faulthandler.enable(file=_fh, all_threads=True)
-    faulthandler.register(signal.SIGUSR1, file=_fh, all_threads=True, chain=False)
+    if hasattr(signal, "SIGUSR1"):
+        faulthandler.register(signal.SIGUSR1, file=_fh, all_threads=True, chain=False)
 except Exception:
     pass
 
