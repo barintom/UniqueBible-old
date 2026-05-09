@@ -14,6 +14,11 @@ import re, os, webbrowser
 
 # Search for material icons at: https://fonts.google.com/icons?selected=Material+Icons
 
+if config.qtLibrary == "pyside6":
+    from PySide6.QtGui import QActionGroup
+else:
+    from qtpy.QtWidgets import QActionGroup
+
 class MaterialMainWindow:
 
     def create_menu(self):
@@ -353,21 +358,25 @@ class MaterialMainWindow:
             addMenuItem(subMenu0, feature, self, action)
         # Verse number Action
         subMenu = addSubMenu(subMenu0, "selectVerseNumberAction")
-        values = ("_noAction", "_cp0", "_cp1", "_cp2", "_cp3", "_cp4", "_cp5", "_cp6", "STUDY", "COMPARE", "CROSSREFERENCE", "TSKE", "TRANSLATION", "DISCOURSE", "WORDS", "COMBO", "INDEX", "COMMENTARY", "STUDY", "_menu")
-        descriptions = ["noAction", "cp0", "cp1", "cp2", "cp3", "cp4", "cp5", "cp6", "openInStudyWindow", "menu4_compareAll", "menu4_crossRef", "menu4_tske", "menu4_traslations", "menu4_discourse", "menu4_words", "menu4_tdw", "menu4_indexes", "menu4_commentary", "menu_syncStudyWindowBible", "classicMenu"]
+        values = ("_noAction", "_cp0", "_cp1", "_cp2", "_cp3", "_cp4", "_cp5", "_cp6", "STUDY", "COMPARE", "CROSSREFERENCE", "TSKE", "TRANSLATION", "DISCOURSE", "WORDS", "COMBO", "INDEX", "COMMENTARY", "_menu")
+        descriptions = ["noAction", "cp0", "cp1", "cp2", "cp3", "cp4", "cp5", "cp6", "openInStudyWindow", "menu4_compareAll", "menu4_crossRef", "menu4_tske", "menu4_traslations", "menu4_discourse", "menu4_words", "menu4_tdw", "menu4_indexes", "menu4_commentary", "classicMenu"]
         clickActionOptions = dict(zip(values, descriptions))
         subMenuSingleClick = addSubMenu(subMenu, "singleClick")
         def singleClickActionSelectedSubmenu():
             subMenuSingleClick.clear()
+            group = QActionGroup(self)
+            group.setExclusive(True)
             for option, description in clickActionOptions.items():
-                addCheckableMenuItem(subMenuSingleClick, description, self, partial(self.singleClickActionSelected, option), config.verseNoSingleClickAction, option)
+                addCheckableMenuItem(subMenuSingleClick, description, self, partial(self.singleClickActionSelected, option), config.verseNoSingleClickAction, option, group=group)
         self.singleClickActionSelectedSubmenu = singleClickActionSelectedSubmenu
         singleClickActionSelectedSubmenu()
         subMenuDoubleClick = addSubMenu(subMenu, "doubleClick")
         def doubleClickActionSelectedSubmenu():
             subMenuDoubleClick.clear()
+            group = QActionGroup(self)
+            group.setExclusive(True)
             for option, description in clickActionOptions.items():
-                addCheckableMenuItem(subMenuDoubleClick, description, self, partial(self.doubleClickActionSelected, option), config.verseNoDoubleClickAction, option)
+                addCheckableMenuItem(subMenuDoubleClick, description, self, partial(self.doubleClickActionSelected, option), config.verseNoDoubleClickAction, option, group=group)
         self.doubleClickActionSelectedSubmenu = doubleClickActionSelectedSubmenu
         doubleClickActionSelectedSubmenu()
         # Abbreviation language

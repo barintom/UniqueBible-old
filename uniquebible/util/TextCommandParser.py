@@ -1432,7 +1432,7 @@ class TextCommandParser:
             config.eventContent = content
             PluginEventHandler.handleEvent("post_parse_bible", command)
             content = config.eventContent
-            if config.openBibleInMainViewOnly:
+            if config.openBibleInMainViewOnly and view != "study":
                 self.setMainVerse(text, bcvTuple)
                 #self.setStudyVerse(text, bcvTuple)
                 return ("main", content, {})
@@ -1545,8 +1545,13 @@ class TextCommandParser:
                 fileItems = marvelBibles[text][0]
                 if os.path.isfile(os.path.join(*fileItems)):
                     content = self.textFormattedBible(firstVerse, text, source, rawOutputChapter=True)
-                    self.setMainVerse(text, firstVerse)
-                    return ("main", content, {})
+                    if config.openBibleInMainViewOnly and source != "study":
+                        self.setMainVerse(text, firstVerse)
+                        return ("main", content, {})
+                    else:
+                        updateViewConfig, *_ = self.getViewConfig(source)
+                        updateViewConfig(text, firstVerse)
+                        return (source, content, {'tab_title': text})
                 else:
                     databaseInfo = marvelBibles[text]
                     if self.parent is not None:
@@ -1554,8 +1559,13 @@ class TextCommandParser:
                     return ("", "", {})
             else:
                 content = self.textFormattedBible(firstVerse, text, source, rawOutputChapter=True)
-                self.setMainVerse(text, firstVerse)
-                return ("main", content, {})
+                if config.openBibleInMainViewOnly and source != "study":
+                    self.setMainVerse(text, firstVerse)
+                    return ("main", content, {})
+                else:
+                    updateViewConfig, *_ = self.getViewConfig(source)
+                    updateViewConfig(text, firstVerse)
+                    return (source, content, {'tab_title': text})
 
     # cmd:::
     # run os command
@@ -3399,22 +3409,22 @@ class TextCommandParser:
         elif not compareOnMain:
             if self.parent is not None:
                 self.parent.passRunTextCommand(bibleCommand, True, source)
-        if not config.verseNoSingleClickAction.upper() == config.syncAction.upper():
-            if config.verseNoSingleClickAction == "_menu" or (config.enableHttpServer and config.verseNoSingleClickAction.startswith("_cp")):
-                menu = HtmlGeneratorUtil().getMenu("{0}.{1}.{2}.{3}".format(text, b, c, v), source)
-                return (source, menu, {})
-            elif config.verseNoSingleClickAction.startswith("_cp"):
-                index = int(config.verseNoSingleClickAction[-1])
+        
+        if config.verseNoSingleClickAction == "_menu" or (config.enableHttpServer and config.verseNoSingleClickAction.startswith("_cp")):
+            menu = HtmlGeneratorUtil().getMenu("{0}.{1}.{2}.{3}".format(text, b, c, v), source)
+            return (source, menu, {})
+        elif config.verseNoSingleClickAction.startswith("_cp"):
+            index = int(config.verseNoSingleClickAction[-1])
+            if self.parent is not None:
+                self.parent.openControlPanelTab(index, int(b), int(c), int(v), text),
+            return ("", "", {})
+        elif not config.verseNoSingleClickAction in ("none", "_noAction"):
+            if not compareOnMain and config.syncAction == "STUDY":
                 if self.parent is not None:
-                    self.parent.openControlPanelTab(index, int(b), int(c), int(v), text),
-                return ("", "", {})
-            else:
-                if not compareOnMain and config.syncAction == "STUDY":
-                    if self.parent is not None:
-                        self.parent.nextStudyWindowTab()
-                if self.parent is not None:
-                    self.parent.addHistoryRecord("main" if compareOnMain else "study", "{0}:::{1}".format(config.verseNoSingleClickAction, verseReference))
-                return self.mapVerseAction(config.verseNoSingleClickAction, verseReference, source)
+                    self.parent.nextStudyWindowTab()
+            if self.parent is not None:
+                self.parent.addHistoryRecord("main" if compareOnMain else "study", "{0}:::{1}".format(config.verseNoSingleClickAction, verseReference))
+            return self.mapVerseAction(config.verseNoSingleClickAction, verseReference, source)
         return ("", "", {})
 
     # _cp:::

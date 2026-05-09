@@ -221,7 +221,7 @@ input.addEventListener('keyup', function(event) {0}
         if not text:
             text = config.mainText
         verseReference = self.bcvToVerseReference(b, c, v)
-        return "<ref id='v{0}.{1}.{2}' onclick='document.title=\"_stayOnSameTab:::\"; document.title=\"BIBLE:::{3}:::{4}\";' onmouseover='document.title=\"_instantVerse:::{3}:::{0}.{1}.{2}\"' ondblclick='document.title=\"_menu:::{3}.{0}.{1}.{2}\"'>".format(b, c, v, text, verseReference)
+        return "<ref id='v{0}.{1}.{2}' onclick='document.title=\"_stayOnSameTab:::\"; document.title=\"_vnsc:::{3}.{0}.{1}.{2}.{4}\";' onmouseover='document.title=\"_instantVerse:::{3}:::{0}.{1}.{2}\"' ondblclick='document.title=\"_menu:::{3}.{0}.{1}.{2}\"'>".format(b, c, v, text, verseReference)
 
     def readTextChapter(self, text, b, c):
         plainBibleList, formattedBibleList = self.getTwoBibleLists()
@@ -357,7 +357,8 @@ input.addEventListener('keyup', function(event) {0}
     def parallelVerse(self, verseList, texts):
         texts = self.sortTexts(texts)
         b, c, v, *_ = verseList[0]
-        content = """<h2><ref onclick="document.title='{0}'">{0}</ref></h2>""".format(self.bcvToVerseReference(b, c, v))
+        verseReference = self.bcvToVerseReference(b, c, v)
+        content = """<h2><ref onclick='document.title=\"_stayOnSameTab:::\"; document.title=\"_vnsc:::{1}.{2}.{3}.{4}.{0}\";'>{0}</ref></h2>""".format(verseReference, config.mainText, b, c, v)
         content += "<table>"
         content += "<tr>"
         for text in texts:
@@ -423,7 +424,8 @@ input.addEventListener('keyup', function(event) {0}
         if texts == ["ALL"]:
             texts = plainBibleList + formattedBibleList
 
-        verses = """<h2><ref onclick="document.title='{0}'">{0}</ref></h2>""".format(self.bcvToVerseReference(b, c, v))
+        verseReference = self.bcvToVerseReference(b, c, v)
+        verses = """<h2><ref onclick='document.title=\"_stayOnSameTab:::\"; document.title=\"_vnsc:::{1}.{2}.{3}.{4}.{0}\";'>{0}</ref></h2>""".format(verseReference, config.mainText, b, c, v)
         verses += "<table>"
         for text in texts:
             *_, verseText = self.readTextVerse(text, b, c, v)

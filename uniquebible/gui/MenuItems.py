@@ -8,14 +8,14 @@ from uniquebible.util.HtmlColorCodes import HtmlColorCodes
 
 # Do not delete items from the following two lines.  It appears that some are not used but they are actually used somewhere else. 
 if config.qtLibrary == "pyside6":
-    from PySide6.QtGui import QIcon, QColor, QPixmap, QAction, QCursor
+    from PySide6.QtGui import QIcon, QColor, QPixmap, QAction, QCursor, QActionGroup
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QToolBar, QPushButton, QLineEdit, QStyleFactory, QComboBox, QToolButton, QMenu, QLabel, QStyle, QSlider
     from PySide6.QtWebEngineCore import QWebEnginePage
 else:
     from qtpy.QtGui import QIcon, QColor, QPixmap, QCursor
     from qtpy.QtCore import Qt
-    from qtpy.QtWidgets import QAction, QToolBar, QPushButton, QLineEdit, QStyleFactory, QComboBox, QToolButton, QMenu, QLabel, QStyle, QSlider
+    from qtpy.QtWidgets import QAction, QToolBar, QPushButton, QLineEdit, QStyleFactory, QComboBox, QToolButton, QMenu, QLabel, QStyle, QSlider, QActionGroup
     from qtpy.QtWebEngineWidgets import QWebEnginePage
 from functools import partial
 
@@ -26,7 +26,7 @@ def addMenu(menuBar, title, translation=True):
 def addSubMenu(parentMenu, translation):
     return parentMenu.addMenu(config.thisTranslation.get(translation, translation))
 
-def addCheckableMenuItem(menu, feature, object, action, currentValue, thisValue, shortcut=None, translation=True, icon=""):
+def addCheckableMenuItem(menu, feature, object, action, currentValue, thisValue, shortcut=None, translation=True, icon="", group=None):
     if shortcut:
         if shortcut in config.shortcutList:
             shortcut = None
@@ -40,6 +40,8 @@ def addCheckableMenuItem(menu, feature, object, action, currentValue, thisValue,
     qAction.setCheckable(True)
     if (isinstance(currentValue, str) and isinstance(thisValue, str) and currentValue.lower() == thisValue.lower()) or currentValue == thisValue:
         qAction.setChecked(True)
+    if group:
+        group.addAction(qAction)
     return menu.addAction(qAction)
 
 def addMenuItem(menu, feature, object, action, shortcut=None, translation=True):
