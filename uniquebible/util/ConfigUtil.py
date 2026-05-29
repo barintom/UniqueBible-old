@@ -802,7 +802,16 @@ class ConfigUtil:
                 pass
         if "Chineseenglishlookup" in config.enabled:
             try:
+                import builtins
+                original_open = builtins.open
+                def patched_open(*args, **kwargs):
+                    if len(args) > 0 and isinstance(args[0], str) and 'cedict_1_0_ts_utf-8_mdbg.txt' in args[0]:
+                        kwargs['encoding'] = 'utf-8'
+                    return original_open(*args, **kwargs)
+
                 from chinese_english_lookup import Dictionary
+                import chinese_english_lookup.dictionary
+                chinese_english_lookup.dictionary.open = patched_open
                 config.cedict = Dictionary()
             except:
                 pass
@@ -850,6 +859,21 @@ class ConfigUtil:
         False)
         setConfig("linuxStartFullScreen", """
         # Start UBA with full-screen on Linux os""",
+        False)
+        setConfig("mainWindowX", """
+        # Last horizontal position of the main window""",
+        -1)
+        setConfig("mainWindowY", """
+        # Last vertical position of the main window""",
+        -1)
+        setConfig("mainWindowWidth", """
+        # Last width of the main window""",
+        -1)
+        setConfig("mainWindowHeight", """
+        # Last height of the main window""",
+        -1)
+        setConfig("mainWindowMaximized", """
+        # Start UBA with the main window maximized""",
         False)
         setConfig("enableClipboardMonitoring", """
         # Enable Clipboard Monitoring""",
@@ -1580,6 +1604,21 @@ class ConfigUtil:
         setConfig("darkThemeActiveVerseColor", """
         # Active verse colour displayed on dark theme.""",
         "#aaff7f")
+        setConfig("lightThemeActiveVerseBackgroundColor", """
+        # Active verse background colour displayed on light theme.
+        # Leave empty string '' to disable background highlight.""",
+        "")
+        setConfig("darkThemeActiveVerseBackgroundColor", """
+        # Active verse background colour displayed on dark theme.
+        # Leave empty string '' to disable background highlight.""",
+        "")
+        setConfig("splitterHandleColor", """
+        # Splitter handle colour (applies to all themes).
+        # Leave empty string '' to use the theme default.""",
+        "")
+        setConfig("splitterHandleThickness", """
+        # Splitter handle thickness in pixels (applies to all themes).""",
+        5)
         setConfig("qtMaterial", """
         # Apply qt-material theme.""",
         False)
@@ -1888,3 +1927,37 @@ class ConfigUtil:
             with open(fileName, "r") as f:
                 settings = f.read()
                 exec(settings)
+
+    @staticmethod
+    def saveColorConfig(fileName=None):
+        """
+        Persist current colour-related preferences to the theme config file.
+        This is used so selecting a built-in preset (e.g. Light DarkBlue) actually
+        takes effect even when a `.color` file exists (and will be re-loaded later).
+        """
+        if not fileName:
+            fileName = ConfigUtil.getColorConfigFilename()
+        # Keep this list aligned with MaterialColorDialog.saveData()
+        data = (
+            ("config.theme", config.theme),
+            ("config.maskMaterialIconColor", getattr(config, "maskMaterialIconColor", "")),
+            ("config.maskMaterialIconBackground", getattr(config, "maskMaterialIconBackground", False)),
+            ("config.widgetBackgroundColor", getattr(config, "widgetBackgroundColor", "")),
+            ("config.widgetForegroundColor", getattr(config, "widgetForegroundColor", "")),
+            ("config.widgetBackgroundColorHover", getattr(config, "widgetBackgroundColorHover", "")),
+            ("config.widgetForegroundColorHover", getattr(config, "widgetForegroundColorHover", "")),
+            ("config.widgetBackgroundColorPressed", getattr(config, "widgetBackgroundColorPressed", "")),
+            ("config.widgetForegroundColorPressed", getattr(config, "widgetForegroundColorPressed", "")),
+            ("config.lightThemeTextColor", getattr(config, "lightThemeTextColor", "")),
+            ("config.darkThemeTextColor", getattr(config, "darkThemeTextColor", "")),
+            ("config.lightThemeActiveVerseColor", getattr(config, "lightThemeActiveVerseColor", "")),
+            ("config.darkThemeActiveVerseColor", getattr(config, "darkThemeActiveVerseColor", "")),
+            ("config.lightThemeActiveVerseBackgroundColor", getattr(config, "lightThemeActiveVerseBackgroundColor", "")),
+            ("config.darkThemeActiveVerseBackgroundColor", getattr(config, "darkThemeActiveVerseBackgroundColor", "")),
+            ("config.splitterHandleColor", getattr(config, "splitterHandleColor", "")),
+            ("config.splitterHandleThickness", getattr(config, "splitterHandleThickness", 5)),
+        )
+        os.makedirs(os.path.dirname(fileName), exist_ok=True)
+        with open(fileName, "w", encoding="utf-8") as fileObj:
+            for name, value in data:
+                fileObj.write("{0} = {1}\n".format(name, pprint.pformat(value)))

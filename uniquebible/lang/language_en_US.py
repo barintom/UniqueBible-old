@@ -1095,4 +1095,8 @@ translation = {
     "githubStatistics": "GitHub Statistics",
     "overrideCompareToUseAllTexts": "Override verse comparison to compare all Bible texts instead of favorite texts",
     "downloadGCloudModulesInSeparateThread": "Downloads the Marvel GCloud (Non-GitHub) modules in a separate thread",
+    "menu_bookmarks": "Bookmarks",
+    "add_active_verse": "Add active verse",
+    "remove_item": "Remove item",
+    "select_save": "Select / Save",
 }

@@ -8,6 +8,7 @@ class Languages:
         "French Français": "fr",
         "German Deutsch": "de",
         "Greek Νέα Ελληνικά": "el",
+        "Hebrew עברית": "heb",
         "Hindi हिन्दी": "hi",
         "Korean 한국어": "ko",
         "Italian Italiano": "it",

@@ -687,6 +687,7 @@ class ClassicMainWindow:
         self.addStandardIconButton("menu3_mainBack", "left.png", self.back, self.leftToolBar)
         self.addStandardIconButton("menu3_main", "history.png", self.mainHistoryButtonClicked, self.leftToolBar)
         self.addStandardIconButton("menu3_mainForward", "right.png", self.forward, self.leftToolBar)
+        self.addStandardIconButton("menu_bookmarks", "material/action/bookmark/materialicons/24dp/2x/baseline_bookmark_black_18dp.png", self.showBookmarksDialog, self.leftToolBar)
         self.leftToolBar.addSeparator()
         self.addStandardIconButton("bar3_pdf", "pdf.png", self.printMainPage, self.leftToolBar)
         self.leftToolBar.addSeparator()
@@ -908,6 +909,9 @@ class ClassicMainWindow:
 
         iconFile = os.path.join("htmlResources", "right.png")
         self.leftToolBar.addAction(QIcon(iconFile), config.thisTranslation["menu3_mainForward"], self.forward)
+
+        iconFile = os.path.join("htmlResources", "material", "action", "bookmark", "materialicons", "48dp", "2x", "baseline_bookmark_black_48dp.png")
+        self.leftToolBar.addAction(QIcon(iconFile), config.thisTranslation["menu_bookmarks"], self.showBookmarksDialog)
 
         self.leftToolBar.addSeparator()
 

@@ -36,6 +36,19 @@ class BiblesSqlite:
         self.cursor = self.connection.cursor()
         self.marvelBibles = ("MOB", "MIB", "MAB", "MPB", "MTB", "LXX1", "LXX1i", "LXX2", "LXX2i")
         self.logger = logging.getLogger('uba')
+        self._hebrew_cache = {}
+
+    def isRtl(self, text, b=None):
+        if (text in config.rtlTexts) or (b is not None and b < 40 and text == "original"):
+            return True
+        if text:
+            if text not in self._hebrew_cache:
+                try:
+                    self._hebrew_cache[text] = Bible(text).getLanguage() == "heb"
+                except:
+                    self._hebrew_cache[text] = False
+            return self._hebrew_cache[text]
+        return False
 
     def __del__(self):
         self.connection.close()
@@ -354,7 +367,7 @@ input.addEventListener('keyup', function(event) {0}
                 else:
                     chapter += "<td>"
                 textTdTag = "<td>"
-                if b < 40 and text in config.rtlTexts:
+                if self.isRtl(text, b):
                     textTdTag = "<td style='direction: rtl;'>"
                 chapter += "</td><td><sup>({0}{1}</ref>)</sup></td>{2}<bibletext class='{1}'>{3}</bibletext></td></tr>".format(self.formVerseTag(b, c, verse, text), text, textTdTag, self.readTextVerse(text, b, c, verse)[3])
         chapter += "</table>"
@@ -373,7 +386,7 @@ input.addEventListener('keyup', function(event) {0}
             if not (verseText == "" and config.hideBlankVerseCompare):
                 verses += "<tr>"
                 verses += "<td>({0}{1}</ref>)</td>".format(self.formVerseTag(b, c, v, text), text)
-                divTag = "<div style='direction: rtl;'>" if b < 40 and text in config.rtlTexts else "<div>"
+                divTag = "<div style='direction: rtl;'>" if self.isRtl(text, b) else "<div>"
                 verses += "<td><bibleText class='{0}'>{1}{2}</div></bibleText></td>".format(text, divTag, verseText.strip())
                 verses += "</tr>"
         verses += "</table>"
@@ -391,7 +404,7 @@ input.addEventListener('keyup', function(event) {0}
             content += "<tr>"
             for text in texts:
                 *_, verseText = self.readTextVerse(text, b, c, verse)
-                divTag = "<div style='direction: rtl;'>" if b < 40 and text in config.rtlTexts else "<div>"
+                divTag = "<div style='direction: rtl;'>" if self.isRtl(text, b) else "<div>"
                 ref = "<sup>{0}{1}:{2}</ref></sup> ".format(self.formVerseTag(b, c, verse, text), c, verse)
                 verseBlock = "<span id='s{0}.{1}.{2}'>".format(b, c, verse)
                 verseBlock += "{0}".format(verseText)
@@ -427,7 +440,7 @@ input.addEventListener('keyup', function(event) {0}
                 if config.theme in ("dark", "night"):
                     verseText = self.adjustDarkThemeColorsForDiff(verseText)
             divTag = "<div>"
-            if b < 40 and text in config.rtlTexts:
+            if self.isRtl(text, b):
                 divTag = "<div style='direction: rtl;'>"
             verses += "<td>{0}{1}</div></td>".format(divTag, verseText.strip())
             verses += "</tr>"
@@ -523,13 +536,13 @@ input.addEventListener('keyup', function(event) {0}
         else:
             for verse in verses:
                 b, c, v, verseText = verse
-                if b < 40 and text in config.rtlTexts:
+                if self.isRtl(text, b):
                     divTag = "<div style='direction: rtl;'>"
                 else:
                     divTag = "<div>"
                 formatedText += "{0}<span style='color: purple;'>({1}{2}</ref>)</span> {3}</div>".format(divTag, self.formVerseTag(b, c, v, text), self.bcvToVerseReference(b, c, v), verseText.strip())
                 if interlinear and not config.favouriteBible == text:
-                    if b < 40 and config.favouriteBible in config.rtlTexts:
+                    if self.isRtl(config.favouriteBible, b):
                         divTag = "<div style='direction: rtl; border: 1px solid gray; border-radius: 2px; margin: 5px; padding: 5px;'>"
                     else:
                         divTag = "<div style='border: 1px solid gray; border-radius: 2px; margin: 5px; padding: 5px;'>"
@@ -595,7 +608,7 @@ input.addEventListener('keyup', function(event) {0}
                     extraStyle = " border: 1px solid gray; border-radius: 2px; margin: 5px; padding: 5px;"
                 else:
                     extraStyle = ""
-                if b < 40 and text in config.rtlTexts:
+                if self.isRtl(text, b):
                     divTag = "<div style='direction: rtl;{0}'>".format(extraStyle)
                 else:
                     divTag = "<div style='{0}'>".format(extraStyle)
@@ -711,7 +724,7 @@ input.addEventListener('keyup', function(event) {0}
         for verseTuple in verseList:
             b, c, v, verseText = verseTuple
             divTag = "<div>"
-            if b < 40 and text in config.rtlTexts:
+            if self.isRtl(text, b):
                 divTag = "<div style='direction: rtl;'>"
             if v in titleList and config.addTitleToPlainChapter:
                 #if not v == 1:
@@ -1095,6 +1108,11 @@ class Bible:
             print(f"Verse table does not exist in {self.text}")
             return (b, c, v, "")
 
+    def isRtl(self, b=None):
+        if (self.text in config.rtlTexts) or (b is not None and b < 40 and self.text == "original"):
+            return True
+        return self.getLanguage() == "heb"
+
     def readFormattedChapter(self, verse, source):
         b, c, v, *_ = verse
         biblesSqlite = BiblesSqlite()
@@ -1124,7 +1142,7 @@ class Bible:
             # e.g. <vid id="v1.1.1" onclick="luV(1)">1</vid>
             chapter += re.sub(r'<vid id="v([0-9]+?).([0-9]+?).([0-9]+?)" onclick="luV\([0-9]+?\)"(.*?>.*?</vid>)', self.formatVerseNumber, scripture[0])
             divTag = "<div>"
-            if self.text in config.rtlTexts and b < 40:
+            if self.isRtl(b):
                 divTag = "<div style='direction: rtl;'>"
             chapter = "{0}{1}</div>".format(divTag, chapter)
             if config.enableVerseHighlighting:

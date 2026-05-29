@@ -878,6 +878,13 @@ class AlephMainWindow:
         forwardButton.clicked.connect(self.forward)
         self.leftToolBar.addWidget(forwardButton)
 
+        bookmarksButton = QPushButton()
+        bookmarksButton.setToolTip(config.thisTranslation.get("menu_bookmarks", "Bookmarks"))
+        bookmarksButtonFile = os.path.join("htmlResources", "material", "action", "bookmark", "materialicons", "24dp", "2x", "baseline_bookmark_black_18dp.png")
+        bookmarksButton.setIcon(QIcon(bookmarksButtonFile))
+        bookmarksButton.clicked.connect(self.showBookmarksDialog)
+        self.leftToolBar.addWidget(bookmarksButton)
+
         self.leftToolBar.addSeparator()
 
         actionButton = QPushButton()

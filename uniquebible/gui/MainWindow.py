@@ -1,4 +1,5 @@
 import os, signal, sys, re, base64, webbrowser, platform, subprocess, requests, logging, zipfile, glob
+import threading
 from uniquebible import config
 import markdown, time
 #from distutils import util
@@ -9,7 +10,7 @@ from uniquebible.util.ConfigUtil import ConfigUtil
 from uniquebible.util.SystemUtil import SystemUtil
 from uniquebible.gui.Worker import YouTubeDownloader, VLCVideo
 if config.qtLibrary == "pyside6":
-    from PySide6.QtCore import QUrl, Qt, QEvent, QThread, QDir, QTimer
+    from PySide6.QtCore import QUrl, Qt, QEvent, QThread, QDir, QTimer, QObject, Signal
     from PySide6.QtGui import QIcon, QGuiApplication, QFont, QKeySequence, QColor, QPixmap, QCursor, QAction, QShortcut
     from PySide6.QtWidgets import QInputDialog, QLineEdit, QMainWindow, QMessageBox, QWidget, QFileDialog, QLabel, QFrame, QFontDialog, QApplication, QPushButton, QColorDialog, QComboBox, QToolButton, QMenu, QCompleter, QHBoxLayout
     from PySide6.QtWebEngineCore import QWebEnginePage
@@ -17,7 +18,7 @@ if config.qtLibrary == "pyside6":
     from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
     from PySide6.QtMultimediaWidgets import QVideoWidget
 else:
-    from qtpy.QtCore import QUrl, Qt, QEvent, QThread, QDir, QTimer
+    from qtpy.QtCore import QUrl, Qt, QEvent, QThread, QDir, QTimer, QObject, Signal
     from qtpy.QtGui import QIcon, QGuiApplication, QFont, QKeySequence, QColor, QPixmap, QCursor
     from qtpy.QtWidgets import QAction, QInputDialog, QLineEdit, QMainWindow, QMessageBox, QWidget, QFileDialog, QLabel, QFrame, QFontDialog, QApplication, QPushButton, QShortcut, QColorDialog, QComboBox, QToolButton, QMenu, QCompleter, QHBoxLayout
     from qtpy.QtWebEngineWidgets import QWebEnginePage
@@ -71,6 +72,7 @@ from uniquebible.gui.MiniBrowser import MiniBrowser
 from uniquebible.gui.CentralWidget import CentralWidget
 from uniquebible.gui.AppUpdateDialog import AppUpdateDialog
 from uniquebible.gui.MaterialColorDialog import MaterialColorDialog
+from uniquebible.gui.BookmarksDialog import BookmarksDialog
 from uniquebible.db.ToolsSqlite import LexiconData
 from uniquebible.util.TtsLanguages import TtsLanguages
 from uniquebible.util.DatafileLocation import DatafileLocation
@@ -93,6 +95,95 @@ from uniquebible.gui.AlephMainWindow import AlephMainWindow
 from uniquebible.gui.ClassicMainWindow import ClassicMainWindow
 from uniquebible.gui.FocusMainWindow import FocusMainWindow
 from uniquebible.gui.MaterialMainWindow import MaterialMainWindow
+
+
+class _ModulePostInstallWorker(QObject):
+    finished = Signal(bool, str)
+
+    def run(self):
+        try:
+            # These can involve disk scans and can take noticeable time on slow storage.
+            Commentary().reloadFileLookup()
+            CatalogUtil.reloadLocalCatalog()
+            self.finished.emit(True, "")
+        except Exception as e:
+            self.finished.emit(False, str(e))
+
+
+class _GitHubRepoIndexWorker(QObject):
+    finished = Signal(object, str)  # (repoData|None, err)
+
+    def __init__(self, repo):
+        super().__init__()
+        self.repo = repo
+
+    def run(self):
+        try:
+            from uniquebible.util.GithubUtil import GithubUtil
+            github = GithubUtil(self.repo)
+            self.finished.emit(github.getRepoData(), "")
+        except Exception as e:
+            self.finished.emit(None, str(e))
+
+
+class _GitHubModuleInstallWorker(QObject):
+    finished = Signal(bool, str)
+
+    def __init__(self, repo, folder, items, repoData):
+        super().__init__()
+        self.repo = repo
+        self.folder = folder
+        self.items = items
+        self.repoData = repoData
+
+    def run(self):
+        try:
+            from uniquebible.util.GithubUtil import GithubUtil
+            github = GithubUtil(self.repo)
+            os.makedirs(self.folder, exist_ok=True)
+            for item in self.items:
+                file = os.path.join(self.folder, item + ".zip")
+                github.downloadFile(file, self.repoData[item])
+                with zipfile.ZipFile(file, 'r') as zipped:
+                    zipped.extractall(self.folder)
+                try:
+                    os.remove(file)
+                except Exception:
+                    pass
+            self.finished.emit(True, "")
+        except Exception as e:
+            self.finished.emit(False, str(e))
+
+
+class _ReloadResourcesWorker(QObject):
+    finished = Signal(object, str)  # (crossPlatformState|None, err)
+
+    def run(self):
+        try:
+            t0 = time.monotonic()
+            # Reload local catalog first (updates what is installed).
+            CatalogUtil.reloadLocalCatalog()
+
+            # Rebuild resource descriptions used across the UI.
+            config.bibleDescription = {}
+            for file in glob.glob(config.marvelData + "/bibles/*.bible"):
+                name = Path(file).stem
+                bible = Bible(name)
+                config.bibleDescription[name] = bible.bibleInfo()
+
+            config.lexiconDescription = {}
+            for file in glob.glob(config.marvelData + "/lexicons/*.lexicon"):
+                name = Path(file).stem
+                lexicon = Lexicon(name)
+                config.lexiconDescription[name] = lexicon.getSampleTopics()
+
+            # Build CrossPlatform resource lists (can be slow).
+            cp = CrossPlatform()
+            cp.setupResourceLists()
+            # Note: state passing avoids touching Qt objects in this thread.
+            self.finished.emit(cp.__dict__, "")
+        except Exception as e:
+            self.finished.emit(None, str(e))
 
 
 class Tooltip(QWidget):
@@ -703,6 +794,96 @@ config.mainWindow.audioPlayer.setAudioOutput(config.audioOutput)"""
         self.setupMenuLayout(config.menuLayout)
         self.reloadControlPanel(show)
 
+    def reloadResourcesAsync(self, show=False):
+        # The synchronous reloadResources() can block the UI for a long time after installs.
+        # Guard against overlapping reloads (e.g., multiple downloads finishing close together).
+        if hasattr(self, "_reloadResourcesThread") and self._reloadResourcesThread is not None:
+            try:
+                if self._reloadResourcesThread.isRunning():
+                    self.logger.warning("reloadResourcesAsync: already running; skipping new request")
+                    return
+            except Exception:
+                pass
+        self.logger.info("reloadResourcesAsync: start show=%s", show)
+        t0 = time.monotonic()
+        self._reloadResourcesThread = QThread()
+        self._reloadResourcesWorker = _ReloadResourcesWorker()
+        self._reloadResourcesWorker.moveToThread(self._reloadResourcesThread)
+        self._reloadResourcesThread.started.connect(self._reloadResourcesWorker.run)
+
+        def _done(state, err):
+            self._reloadResourcesThread.quit()
+            if state is None:
+                self.logger.warning("reloadResourcesAsync: failed after %.2fs: %s", time.monotonic() - t0, err)
+                return
+            self.logger.info("reloadResourcesAsync: worker finished after %.2fs", time.monotonic() - t0)
+            # Update the existing CrossPlatform instance in-place (other components may hold a reference).
+            for k, v in state.items():
+                try:
+                    setattr(self.crossPlatform, k, v)
+                except Exception:
+                    pass
+            # Refresh resource lists in-place. Avoid tearing down/rebuilding the whole UI:
+            # `reloadControlPanel()` closes and recreates a large window and can make the app appear frozen.
+            try:
+                self.setupResourceLists()
+            except Exception:
+                pass
+            if self.controlPanel:
+                try:
+                    self.controlPanel.setupResourceLists()
+                except Exception:
+                    pass
+            # Update bible selection UI controls (combo/button/menu) to pick up newly installed modules.
+            try:
+                self.refreshBibleVersionWidgets()
+            except Exception:
+                pass
+            self.logger.info("reloadResourcesAsync: UI refresh done (%.2fs total)", time.monotonic() - t0)
+
+        self._reloadResourcesWorker.finished.connect(_done)
+        self._reloadResourcesWorker.finished.connect(self._reloadResourcesWorker.deleteLater)
+        self._reloadResourcesThread.finished.connect(self._reloadResourcesThread.deleteLater)
+        self._reloadResourcesThread.start()
+
+    def refreshBibleVersionWidgets(self):
+        """
+        Update bible-version related widgets after installs without rebuilding the whole menu layout.
+        This is intentionally lightweight to keep the UI responsive.
+        """
+        # Rebuild the list used by the direct-selection combo.
+        try:
+            self.bibleVersions = BiblesSqlite().getBibleList()
+        except Exception:
+            self.bibleVersions = getattr(self, "bibleVersions", [])
+
+        if getattr(self, "versionCombo", None) is not None:
+            try:
+                self.versionCombo.blockSignals(True)
+                self.versionCombo.clear()
+                self.versionCombo.addItems(self.bibleVersions)
+                if config.mainText in self.bibleVersions:
+                    self.versionCombo.setCurrentIndex(self.bibleVersions.index(config.mainText))
+                self.versionCombo.blockSignals(False)
+            except Exception:
+                try:
+                    self.versionCombo.blockSignals(False)
+                except Exception:
+                    pass
+
+        # Update the material layout bible selector menu if present.
+        if hasattr(self, "bibleSelection") and getattr(self, "bibleSelection", None) is not None and config.menuLayout in ("material",):
+            try:
+                self.setBibleSelection()
+            except Exception:
+                pass
+
+        # Keep the rest of UI in sync with the currently selected text.
+        try:
+            self.updateVersionCombo()
+        except Exception:
+            pass
+
     def reloadControlPanel(self, show=True):
         if self.controlPanel:
             self.controlPanel.close()
@@ -797,20 +978,24 @@ config.mainWindow.audioPlayer.setAudioOutput(config.audioOutput)"""
             QGuiApplication.instance().quit()
 
     def resetUI(self):
-        config.defineStyle()
         app = QGuiApplication.instance()
         if config.qtMaterial and config.qtMaterialTheme:
             from qt_material import apply_stylesheet
             apply_stylesheet(app, theme=config.qtMaterialTheme)
             config.theme = "dark" if config.qtMaterialTheme.startswith("dark_") else "default"
+            # For qt-material, we don't regenerate QSS from config.materialStyle, but we
+            # still reload theme-linked colour preferences for HTML views and plugins.
+            ConfigUtil.loadColorConfig()
         else:
+            # Load theme colour config first so defineStyle/materialStyle is generated from it.
+            ConfigUtil.loadColorConfig()
+            config.defineStyle()
             app.setPalette(Themes.getPalette())
             if config.menuLayout == "material":
                 app.setStyleSheet(config.materialStyle)
                 self.setupMenuLayout("material")
             else:
                 app.setStyleSheet("")
-        ConfigUtil.loadColorConfig()
         self.reloadCurrentRecord(True)
 
     def restartApp(self):
@@ -1071,21 +1256,30 @@ config.mainWindow.audioPlayer.setAudioOutput(config.audioOutput)"""
 
     def downloadFile(self, databaseInfo, notification=True):
         # Prevent downloading multiple files at the same time.
+        if config.isDownloading:
+            # Some code paths call downloadFile() directly without going through downloadHelper().
+            self.logger.warning("downloadFile: already downloading; ignoring new request databaseInfo=%s", databaseInfo)
+            return
         config.isDownloading = True
         # Retrieve file information
         fileItems, cloudID, *_ = databaseInfo
         cloudFile = "https://drive.google.com/uc?id={0}".format(cloudID)
         localFile = "{0}.zip".format(os.path.join(*fileItems))
+        self.logger.info("downloadFile: start cloudID=%s localFile=%s separateThread=%s", cloudID, localFile, config.downloadGCloudModulesInSeparateThread)
 
         if config.downloadGCloudModulesInSeparateThread:
             # Configure a QThread
             self.downloadthread = QThread()
             self.downloadProcess = DownloadProcess(cloudFile, localFile)
             self.downloadProcess.moveToThread(self.downloadthread)
+            # Save context for the finished callback. Only one download at a time is supported.
+            self._download_context = (fileItems, cloudID, notification)
             # Connect actions
             self.downloadthread.started.connect(self.downloadProcess.downloadFile)
             self.downloadProcess.finished.connect(self.downloadthread.quit)
-            self.downloadProcess.finished.connect(lambda: self.moduleInstalled(fileItems, cloudID, notification))
+            # Avoid lambda here: in PySide/PyQt, a lambda can run in the emitting thread.
+            # We want Qt to deliver the slot to the MainWindow (GUI) thread via queued connection.
+            self.downloadProcess.finished.connect(self._onDownloadProcessFinished)
             self.downloadProcess.finished.connect(self.downloadProcess.deleteLater)
             self.downloadthread.finished.connect(self.downloadthread.deleteLater)
             # Start a QThread
@@ -1098,25 +1292,45 @@ config.mainWindow.audioPlayer.setAudioOutput(config.audioOutput)"""
             if self.downloader:
                 self.downloader.close()
 
+    def _onDownloadProcessFinished(self):
+        try:
+            ctx = getattr(self, "_download_context", None)
+            if not ctx:
+                self.logger.warning("_onDownloadProcessFinished: missing context")
+                return
+            fileItems, cloudID, notification = ctx
+            self.moduleInstalled(fileItems, cloudID, notification)
+        finally:
+            # Clear regardless of success to avoid stale state on subsequent installs.
+            self._download_context = None
+
     def moduleInstalled(self, fileItems, cloudID, notification=True):
+        self.logger.info(
+            "moduleInstalled: callback cloudID=%s fileItems=%s pythonThread=%s",
+            cloudID,
+            fileItems,
+            threading.current_thread().name,
+        )
         if hasattr(self, "downloader") and self.downloader.isVisible():
             self.downloader.close()
         # Check if file is successfully installed
         localFile = os.path.join(*fileItems)
         if os.path.isfile(localFile):
-            # Reload Master Control
-            self.reloadControlPanel(False)
             # Update install history
             config.installHistory[fileItems[-1]] = cloudID
             # Notify users
             if notification:
                 self.displayMessage(config.thisTranslation["message_installed"])
+            # Reload resources asynchronously so newly installed modules show up without restart.
+            self.logger.info("moduleInstalled: reloadResourcesAsync start")
+            self.reloadResourcesAsync(False)
+            self.logger.info("moduleInstalled: reloadResourcesAsync queued")
         elif notification:
             self.displayMessage(config.thisTranslation["message_failedToInstall"])
         config.isDownloading = False
-        Commentary().reloadFileLookup()
-        CatalogUtil.reloadLocalCatalog()
-        self.setupMenuLayout(config.menuLayout)
+        if not os.path.isfile(localFile):
+            # Nothing installed, but refresh menus anyway.
+            self.setupMenuLayout(config.menuLayout)
 
     def downloadGoogleStaticMaps(self):
         # https://developers.google.com/maps/documentation/maps-static/intro
@@ -1171,7 +1385,11 @@ config.mainWindow.audioPlayer.setAudioOutput(config.audioOutput)"""
             self.installAllMarvelFiles(bibles, installAll)
         else:
             return
-        self.reloadResources()
+        if config.downloadGCloudModulesInSeparateThread:
+            # Avoid blocking the UI while download is running; resources will refresh after install/restart.
+            pass
+        else:
+            self.reloadResources()
         if not config.downloadGCloudModulesInSeparateThread:
             self.installMarvelBibles()
 
@@ -1188,12 +1406,16 @@ config.mainWindow.audioPlayer.setAudioOutput(config.audioOutput)"""
                                         config.thisTranslation["menu8_commentaries"], items, 0, False)
         if ok and item and not item in ("[All Installed]", installAll):
             self.downloadHelper(commentaries[item])
-            self.reloadResources()
+            if not config.downloadGCloudModulesInSeparateThread:
+                self.reloadResources()
         elif ok and item == installAll:
             self.installAllMarvelFiles(commentaries, installAll)
         else:
             return
-        self.reloadResources()
+        if config.downloadGCloudModulesInSeparateThread:
+            pass
+        else:
+            self.reloadResources()
         if not config.downloadGCloudModulesInSeparateThread:
             self.installMarvelCommentaries()
 
@@ -1213,7 +1435,11 @@ config.mainWindow.audioPlayer.setAudioOutput(config.audioOutput)"""
                 downloader = Downloader(self, databaseInfo)
                 print("Downloading " + file)
                 downloader.downloadFile(False)
-            self.reloadResources()
+            if config.downloadGCloudModulesInSeparateThread:
+                # Don't block the UI here; downloads run in the background.
+                pass
+            else:
+                self.reloadResources()
             print("Downloading complete")
             if config.downloadGCloudModulesInSeparateThread:
                 self.displayMessage(config.thisTranslation["message_installed"])
@@ -1234,7 +1460,10 @@ config.mainWindow.audioPlayer.setAudioOutput(config.audioOutput)"""
             self.installAllMarvelFiles(datasets, installAll)
         else:
             return
-        self.reloadResources()
+        if config.downloadGCloudModulesInSeparateThread:
+            pass
+        else:
+            self.reloadResources()
         if not config.downloadGCloudModulesInSeparateThread:
             self.installMarvelDatasets()
 
@@ -1299,41 +1528,76 @@ config.mainWindow.audioPlayer.setAudioOutput(config.audioOutput)"""
         repo, directory, title, extension = gitHubRepoInfo
         if ("Pygithub" in config.enabled):
             try:
-                from uniquebible.util.GithubUtil import GithubUtil
-
                 installAll = "Install ALL"
-                github = GithubUtil(repo)
-                repoData = github.getRepoData()
-                folder = os.path.join(config.marvelData, directory)
-                items = [item for item in repoData.keys() if not FileUtil.regexFileExists("^{0}.*".format(GithubUtil.getShortname(item).replace(".", "\\.")), folder)]
-                if items:
-                    items.append(installAll)
-                else:
-                    items = ["[All Installed]"]
-                selectedItem, ok = QInputDialog.getItem(self, "UniqueBible",
-                                                config.thisTranslation[title], items, 0, False)
-                if ok and selectedItem:
+                # Repo indexing and downloads can take time; run off the UI thread to avoid freezing.
+                self.displayMessage(config.thisTranslation.get("message_installing", "Installing ..."))
+
+                self._githubIndexThread = QThread()
+                self._githubIndexWorker = _GitHubRepoIndexWorker(repo)
+                self._githubIndexWorker.moveToThread(self._githubIndexThread)
+                self._githubIndexThread.started.connect(self._githubIndexWorker.run)
+
+                def _indexDone(repoData, err):
+                    self._githubIndexThread.quit()
+                    if not repoData:
+                        self.displayMessage(config.thisTranslation["couldNotAccess"] + " " + repo + (f"\n{err}" if err else ""))
+                        return
+
+                    from uniquebible.util.GithubUtil import GithubUtil
+                    folder = os.path.join(config.marvelData, directory)
+                    items = [item for item in repoData.keys()
+                             if not FileUtil.regexFileExists("^{0}.*".format(GithubUtil.getShortname(item).replace(".", "\\.")), folder)]
+                    if items:
+                        items.append(installAll)
+                    else:
+                        items = ["[All Installed]"]
+
+                    selectedItem, ok = QInputDialog.getItem(
+                        self, "UniqueBible", config.thisTranslation[title], items, 0, False
+                    )
+                    if not (ok and selectedItem):
+                        return
+
+                    if selectedItem == "[All Installed]":
+                        return
+
                     if selectedItem == installAll:
-                        self.displayMessage("{0}  {1}".format(config.thisTranslation["message_downloadAllFiles"],
-                                                              config.thisTranslation["message_willBeNoticed"]))
+                        self.displayMessage("{0}  {1}".format(
+                            config.thisTranslation["message_downloadAllFiles"],
+                            config.thisTranslation["message_willBeNoticed"],
+                        ))
                         items.remove(installAll)
-                        print("Downloading {0} files".format(len(items)))
+                        toInstall = items
                     else:
                         self.displayMessage(selectedItem + " " + config.thisTranslation["message_installing"])
-                        items = [selectedItem]
-                    for index, item in enumerate(items):
-                        file = os.path.join(folder, item+".zip")
-                        print("Downloading {0}".format(file))
-                        github.downloadFile(file, repoData[item])
-                        with zipfile.ZipFile(file, 'r') as zipped:
-                            zipped.extractall(folder)
-                        os.remove(file)
-                    print("Downloading complete")
-                    self.reloadResources()
-                    if selectedItem == installAll:
-                        self.displayMessage(config.thisTranslation["message_installed"])
-                    else:
-                        self.installFromGitHub(gitHubRepoInfo)
+                        toInstall = [selectedItem]
+
+                    self._githubInstallThread = QThread()
+                    self._githubInstallWorker = _GitHubModuleInstallWorker(repo, folder, toInstall, repoData)
+                    self._githubInstallWorker.moveToThread(self._githubInstallThread)
+                    self._githubInstallThread.started.connect(self._githubInstallWorker.run)
+
+                    def _installDone(ok2, err2):
+                        self._githubInstallThread.quit()
+                        if ok2:
+                            self.reloadResourcesAsync(False)
+                            self.displayMessage(config.thisTranslation["message_installed"])
+                            if selectedItem != installAll:
+                                # allow installing another module without freezing
+                                self.installFromGitHub(gitHubRepoInfo)
+                        else:
+                            self.displayMessage(config.thisTranslation.get("message_failedToInstall", "Failed to install") + (f"\n{err2}" if err2 else ""))
+
+                    self._githubInstallWorker.finished.connect(_installDone)
+                    self._githubInstallWorker.finished.connect(self._githubInstallWorker.deleteLater)
+                    self._githubInstallThread.finished.connect(self._githubInstallThread.deleteLater)
+                    self._githubInstallThread.start()
+
+                self._githubIndexWorker.finished.connect(_indexDone)
+                self._githubIndexWorker.finished.connect(self._githubIndexWorker.deleteLater)
+                self._githubIndexThread.finished.connect(self._githubIndexThread.deleteLater)
+                self._githubIndexThread.start()
+
                 return True
 
             except Exception as ex:
@@ -1509,9 +1773,15 @@ config.mainWindow.audioPlayer.setAudioOutput(config.audioOutput)"""
         config.theme = theme
         if mainColor and setColours:
             self.setColours(mainColor)
+            # Persist the preset into the active theme file so resetUI() (and restarts)
+            # don't immediately override it by re-loading an older `.color` file.
+            ConfigUtil.saveColorConfig()
         elif config.menuLayout == "material":
             if setColours:
-                self.setColours()
+                # If user has customised colours for this theme, keep them.
+                # Otherwise fall back to built-in defaults.
+                if not os.path.exists(ConfigUtil.getColorConfigFilename()):
+                    self.setColours()
         else:
             self.setupMenuLayout(config.menuLayout)
         PluginEventHandler.handleEvent("post_theme_change")
@@ -1530,6 +1800,7 @@ config.mainWindow.audioPlayer.setAudioOutput(config.audioOutput)"""
             config.widgetForegroundColorPressed = '#FFFFE0'
             config.darkThemeTextColor = '#ffffff'
             config.darkThemeActiveVerseColor = '#aaff7f'
+            config.darkThemeActiveVerseBackgroundColor = ''
         else:
             config.maskMaterialIconColor = "#483D8B"
             config.maskMaterialIconBackground = False
@@ -1541,6 +1812,7 @@ config.mainWindow.audioPlayer.setAudioOutput(config.audioOutput)"""
             config.widgetForegroundColorPressed = "#483D8B"
             config.lightThemeTextColor = "#000000"
             config.lightThemeActiveVerseColor = "#483D8B"
+            config.lightThemeActiveVerseBackgroundColor = ''
         if color:
             color = HtmlColorCodes.colors[color][0]
             config.maskMaterialIconBackground = False
@@ -3019,6 +3291,10 @@ config.mainWindow.audioPlayer.setAudioOutput(config.audioOutput)"""
         self.bibleCollectionDialog = BibleCollectionDialog(self)
         self.bibleCollectionDialog.show()
 
+    def showBookmarksDialog(self):
+        self.bookmarksDialog = BookmarksDialog(self)
+        self.bookmarksDialog.show()
+
     def showLiveFilterDialog(self):
         self.liveFilterDialog = LiveFilterDialog(self)
         self.liveFilterDialog.reloadFilters()
@@ -4009,10 +4285,11 @@ config.mainWindow.audioPlayer.setAudioOutput(config.audioOutput)"""
     
     def getScrollVerseJS(self, b, c, v, underline=False):
         activeVerseNoColour = config.darkThemeActiveVerseColor if config.theme in ("dark", "night") else config.lightThemeActiveVerseColor
+        activeVerseBgColour = config.darkThemeActiveVerseBackgroundColor if config.theme in ("dark", "night") else config.lightThemeActiveVerseBackgroundColor
         js = """
             var activeVerse = document.getElementById('v{0}.{1}.{2}');
             if (typeof(activeVerse) != 'undefined' && activeVerse != null) {3}
-                activeVerse.scrollIntoView(); activeVerse.style.color = '{5}';
+                activeVerse.scrollIntoView(); activeVerse.style.color = '{5}'; activeVerse.style.backgroundColor = '{7}';
                 {6}
             {4} else if (document.getElementById('v0.0.0') != null) {3}
                 document.getElementById('v0.0.0').scrollIntoView();
@@ -4025,6 +4302,7 @@ config.mainWindow.audioPlayer.setAudioOutput(config.audioOutput)"""
             "}",
             activeVerseNoColour,
             "activeVerse.style.textDecoration = 'underline';" if underline else "",
+            activeVerseBgColour,
         )
         #print("studyView", studyView)
         #print(js)
